@@ -16,7 +16,7 @@ import { VoteGateway } from './gateway/vote.gateway';
       password: process.env.DB_PASSWORD || 'admin',
       database: process.env.DB_NAME || 'postgres',
       entities: [Topic, Vote],
-      synchronize: process.env.NODE_ENV !== 'production', // 프로덕션에서는 false로 설정 권장
+      synchronize: true, // 프로덕션에서도 테이블 자동 생성 (임시)
       ssl: process.env.DB_SSL === 'true' ? { rejectUnauthorized: false } : false,
     }),
     TypeOrmModule.forFeature([Topic, Vote]),
