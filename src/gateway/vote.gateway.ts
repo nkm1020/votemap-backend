@@ -9,9 +9,20 @@ import {
 } from '@nestjs/websockets';
 import { Server, Socket } from 'socket.io';
 
+// CORS 설정을 환경 변수에서 가져오기
+const getCorsOrigins = () => {
+  if (process.env.CORS_ORIGINS) {
+    return process.env.CORS_ORIGINS.split(',').map(origin => origin.trim());
+  }
+  // 개발 환경 기본값
+  return ['http://localhost:3000', 'http://localhost:3001', 'http://localhost:3002'];
+};
+
 @WebSocketGateway({
   cors: {
-    origin: ['http://localhost:3000', 'http://localhost:3001', 'http://localhost:3002'],
+    origin: process.env.NODE_ENV === 'production' 
+      ? getCorsOrigins() 
+      : true, // 개발 환경에서는 모든 origin 허용
     credentials: true,
   },
 })

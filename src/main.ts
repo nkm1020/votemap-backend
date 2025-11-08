@@ -6,14 +6,21 @@ import { AppModule } from './app.module';
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
 
-  // 추가: CORS 설정
-  // 개발 환경에서 모든 localhost 포트를 허용합니다.
+  // CORS 설정
+  const allowedOrigins = process.env.CORS_ORIGINS
+    ? process.env.CORS_ORIGINS.split(',').map(origin => origin.trim())
+    : ['http://localhost:3000', 'http://localhost:3001', 'http://localhost:3002'];
+
   app.enableCors({
-    origin: true, // 모든 origin 허용 (개발 환경용)
+    origin: process.env.NODE_ENV === 'production' 
+      ? allowedOrigins 
+      : true, // 개발 환경에서는 모든 origin 허용
     credentials: true,
   });
 
-  // 백엔드 서버는 포트 3001에서 실행
-  await app.listen(3001);
+  // 포트 설정 (Render는 PORT 환경 변수를 제공)
+  const port = process.env.PORT || 3001;
+  await app.listen(port);
+  console.log(`Application is running on: http://localhost:${port}`);
 }
 bootstrap();

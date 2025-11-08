@@ -10,13 +10,14 @@ import { VoteGateway } from './gateway/vote.gateway';
   imports: [
     TypeOrmModule.forRoot({
       type: 'postgres',
-      host: 'localhost',
-      port: 5432,
-      username: 'postgres', // 대부분 기본값이 'postgres'입니다.
-      password: 'admin', // 파트너님께서 설치 시 설정한 DB 비밀번호를 여기에 입력!
-      database: 'postgres', // 일단 기본 DB에 연결합니다.
+      host: process.env.DB_HOST || 'localhost',
+      port: parseInt(process.env.DB_PORT || '5432', 10),
+      username: process.env.DB_USERNAME || 'postgres',
+      password: process.env.DB_PASSWORD || 'admin',
+      database: process.env.DB_NAME || 'postgres',
       entities: [Topic, Vote],
-      synchronize: true, // 개발용 옵션: 코드가 바뀌면 DB 테이블을 자동으로 맞춰줍니다.
+      synchronize: process.env.NODE_ENV !== 'production', // 프로덕션에서는 false로 설정 권장
+      ssl: process.env.DB_SSL === 'true' ? { rejectUnauthorized: false } : false,
     }),
     TypeOrmModule.forFeature([Topic, Vote]),
   ],
