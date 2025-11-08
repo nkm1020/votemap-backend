@@ -6,6 +6,7 @@ import { Repository, Not } from 'typeorm';
 import { Topic, TopicStatus } from './topics/topic.entity';
 import { Vote } from './votes/vote.entity'; 
 import { CreateVoteDto } from './votes/dto/create-vote.dto'; 
+import { CreateTopicDto } from './topics/dto/create-topic.dto';
 import { ResultsDto } from './results/results.dto';
 import { VoteGateway } from './gateway/vote.gateway';
 
@@ -114,6 +115,19 @@ export class AppService {
       console.error('Error deleting votes:', error);
       throw error;
     }
+  }
+
+  async createTopic(createTopicDto: CreateTopicDto): Promise<Topic> {
+    const topic = this.topicsRepository.create({
+      title: createTopicDto.title,
+      option_a: createTopicDto.option_a,
+      option_b: createTopicDto.option_b,
+      image_url: createTopicDto.image_url || null,
+      status: createTopicDto.status 
+        ? (createTopicDto.status as TopicStatus)
+        : TopicStatus.ONGOING,
+    });
+    return await this.topicsRepository.save(topic);
   }
   
 }

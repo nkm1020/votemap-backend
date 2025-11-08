@@ -4,6 +4,7 @@ import { Controller, Get, Post, Delete, Body, Param } from '@nestjs/common';
 import { AppService } from './app.service';
 import { Topic } from './topics/topic.entity';
 import { CreateVoteDto } from './votes/dto/create-vote.dto'; 
+import { CreateTopicDto } from './topics/dto/create-topic.dto';
 import { Vote } from './votes/vote.entity'; 
 import { ResultsDto } from './results/results.dto';
 
@@ -40,6 +41,11 @@ export class AppController {
   @Delete('/votes') // 모든 투표 데이터 삭제
   async deleteAllVotes(): Promise<{ message: string; count: number }> {
     return this.appService.deleteAllVotes();
+  }
+
+  @Post('/topics') // 주제 생성
+  async createTopic(@Body() createTopicDto: CreateTopicDto): Promise<Topic> {
+    return this.appService.createTopic(createTopicDto);
   }
 
 }
