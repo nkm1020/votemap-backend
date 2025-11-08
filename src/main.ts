@@ -7,11 +7,13 @@ async function bootstrap() {
   const app = await NestFactory.create(AppModule);
 
   // 추가: CORS 설정
-  // localhost:3001 에서 오는 요청을 허용합니다.
+  // 개발 환경에서 모든 localhost 포트를 허용합니다.
   app.enableCors({
-    origin: 'http://localhost:3001',
+    origin: true, // 모든 origin 허용 (개발 환경용)
+    credentials: true,
   });
 
-  await app.listen(3000);
+  // 백엔드 서버는 포트 3001에서 실행
+  await app.listen(3001);
 }
 bootstrap();

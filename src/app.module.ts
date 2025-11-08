@@ -4,6 +4,7 @@ import { AppService } from './app.service';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { Topic } from './topics/topic.entity';
 import { Vote } from './votes/vote.entity';
+import { VoteGateway } from './gateway/vote.gateway';
 
 @Module({
   imports: [
@@ -20,6 +21,6 @@ import { Vote } from './votes/vote.entity';
     TypeOrmModule.forFeature([Topic, Vote]),
   ],
   controllers: [AppController],
-  providers: [AppService],
+  providers: [AppService, VoteGateway],
 })
 export class AppModule {}

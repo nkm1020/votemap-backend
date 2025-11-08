@@ -1,12 +1,13 @@
 // src/app.service.ts
 
-import { Injectable } from '@nestjs/common';
+import { Injectable, Inject, forwardRef } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Repository, Not } from 'typeorm';
 import { Topic, TopicStatus } from './topics/topic.entity';
 import { Vote } from './votes/vote.entity'; 
 import { CreateVoteDto } from './votes/dto/create-vote.dto'; 
 import { ResultsDto } from './results/results.dto';
+import { VoteGateway } from './gateway/vote.gateway';
 
 
 @Injectable()
@@ -16,11 +17,17 @@ export class AppService {
     private topicsRepository: Repository<Topic>,
     @InjectRepository(Vote) // 추가: Vote Repository 주입
     private votesRepository: Repository<Vote>,
+    @Inject(forwardRef(() => VoteGateway))
+    private voteGateway: VoteGateway,
   ) {}
 
   // src/app.service.ts
   async getCurrentTopic(): Promise<Topic | null> { // 수정: '또는 null'을 추가하여 약속을 명확히 함
     return this.topicsRepository.findOne({ where: { status: TopicStatus.ONGOING } });
+  }
+
+  async getTopic(id: number): Promise<Topic | null> {
+    return this.topicsRepository.findOne({ where: { id } });
   }
 
   async createVote(createVoteDto: CreateVoteDto): Promise<Vote> {
@@ -30,7 +37,31 @@ export class AppService {
       topic: { id: createVoteDto.topic_id }, // 관계된 topic의 id를 넣어줍니다.
     });
 
-    return this.votesRepository.save(newVote);
+    const savedVote = await this.votesRepository.save(newVote);
+
+    // Get updated results for this topic
+    const updatedResults = await this.getTopicResults(createVoteDto.topic_id);
+
+    // Broadcast vote update via WebSocket
+    this.voteGateway.broadcastVoteUpdate(
+      createVoteDto.topic_id,
+      createVoteDto.region,
+      createVoteDto.choice,
+      updatedResults,
+    );
+
+    // Also broadcast full results update
+    this.voteGateway.broadcastResultsUpdate(createVoteDto.topic_id, updatedResults);
+
+    return savedVote;
+  }
+
+  async getSelectableTopics(): Promise<Topic[]> {
+    return this.topicsRepository.find({
+      where: {
+        status: Not(TopicStatus.CLOSED),
+      },
+    });
   }
 
    async getTopicResults(topicId: number): Promise<ResultsDto> {
@@ -68,6 +99,21 @@ export class AppService {
     }
 
     return results;
+  }
+
+  async deleteAllVotes(): Promise<{ message: string; count: number }> {
+    try {
+      const votes = await this.votesRepository.find();
+      const count = votes.length;
+      await this.votesRepository.remove(votes);
+      return {
+        message: 'All votes deleted successfully',
+        count: count,
+      };
+    } catch (error) {
+      console.error('Error deleting votes:', error);
+      throw error;
+    }
   }
   
 }
