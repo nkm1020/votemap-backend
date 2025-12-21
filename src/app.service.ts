@@ -4,8 +4,8 @@ import { Injectable, Inject, forwardRef } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, Not } from 'typeorm';
 import { Topic, TopicStatus } from './topics/topic.entity';
-import { Vote } from './votes/vote.entity'; 
-import { CreateVoteDto } from './votes/dto/create-vote.dto'; 
+import { Vote } from './votes/vote.entity';
+import { CreateVoteDto } from './votes/dto/create-vote.dto';
 import { CreateTopicDto } from './topics/dto/create-topic.dto';
 import { ResultsDto } from './results/results.dto';
 import { VoteGateway } from './gateway/vote.gateway';
@@ -20,7 +20,7 @@ export class AppService {
     private votesRepository: Repository<Vote>,
     @Inject(forwardRef(() => VoteGateway))
     private voteGateway: VoteGateway,
-  ) {}
+  ) { }
 
   // src/app.service.ts
   async getCurrentTopic(): Promise<Topic | null> { // 수정: '또는 null'을 추가하여 약속을 명확히 함
@@ -65,7 +65,7 @@ export class AppService {
     });
   }
 
-   async getTopicResults(topicId: number): Promise<ResultsDto> {
+  async getTopicResults(topicId: number): Promise<ResultsDto> {
     // 1. 데이터베이스에서 topicId에 해당하는 투표들을 가져옵니다.
     //    그리고 지역(region)과 선택(choice)으로 그룹화하여 개수를 셉니다.
     const rawResults = await this.votesRepository
@@ -117,18 +117,40 @@ export class AppService {
     }
   }
 
+  async deleteVotesByRegion(region: string): Promise<{ message: string; count: number }> {
+    try {
+      const votes = await this.votesRepository.find({ where: { region } });
+      const count = votes.length;
+      if (count > 0) {
+        await this.votesRepository.remove(votes);
+      }
+      return {
+        message: `Votes for region ${region} deleted successfully`,
+        count: count,
+      };
+    } catch (error) {
+      console.error('Error deleting votes:', error);
+      throw error;
+    }
+  }
+
   async createTopic(createTopicDto: CreateTopicDto): Promise<Topic> {
     const topic = this.topicsRepository.create({
       title: createTopicDto.title,
       option_a: createTopicDto.option_a,
       option_b: createTopicDto.option_b,
       image_url: createTopicDto.image_url || undefined,
-      status: createTopicDto.status 
+      status: createTopicDto.status
         ? (createTopicDto.status as TopicStatus)
         : TopicStatus.ONGOING,
     });
     const savedTopic = await this.topicsRepository.save(topic);
     return savedTopic;
   }
-  
+
+  async updateTopic(id: number, updateData: Partial<Topic>): Promise<Topic | null> {
+    await this.topicsRepository.update(id, updateData);
+    return this.topicsRepository.findOne({ where: { id } });
+  }
+
 }

@@ -1,0 +1,4 @@
+
+> votemap-backend@0.0.1 build
+> tsc -p tsconfig.build.json
+
