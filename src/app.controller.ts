@@ -58,5 +58,10 @@ export class AppController {
     return this.appService.updateTopic(parseInt(id, 10), updateData);
   }
 
+  @Get('/users/:uuid/stats')
+  async getUserStats(@Param('uuid') uuid: string) {
+    return this.appService.getUserStats(uuid);
+  }
+
 
 }

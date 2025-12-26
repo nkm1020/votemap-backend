@@ -35,6 +35,7 @@ export class AppService {
     const newVote = this.votesRepository.create({
       choice: createVoteDto.choice,
       region: createVoteDto.region,
+      user_uuid: createVoteDto.user_uuid,
       topic: { id: createVoteDto.topic_id }, // 관계된 topic의 id를 넣어줍니다.
     });
 
@@ -151,6 +152,72 @@ export class AppService {
   async updateTopic(id: number, updateData: Partial<Topic>): Promise<Topic | null> {
     await this.topicsRepository.update(id, updateData);
     return this.topicsRepository.findOne({ where: { id } });
+  }
+
+  async getUserStats(user_uuid: string) {
+    const votes = await this.votesRepository.find({
+      where: { user_uuid },
+      relations: ['topic'],
+    });
+
+    if (votes.length === 0) {
+      return {
+        total_votes: 0,
+        match_rate: 0,
+        title: 'Newcomer',
+        description: '첫 투표를 기다리고 있습니다.',
+      };
+    }
+
+    let matchCount = 0;
+
+    // Analyze each vote
+    for (const vote of votes) {
+      // Optimize: Ideally cache this or fetch in bulk, but for now iterate
+      const results = await this.getTopicResults(vote.topic.id);
+      const regionData = results.by_region[vote.region];
+
+      if (regionData) {
+        const aVotes = regionData.A || 0;
+        const bVotes = regionData.B || 0;
+
+        // Determine majority
+        let majority = 'draw';
+        if (aVotes > bVotes) majority = 'A';
+        if (bVotes > aVotes) majority = 'B';
+
+        if (vote.choice === majority) {
+          matchCount++;
+        }
+      }
+    }
+
+    const matchRate = (matchCount / votes.length) * 100;
+
+    let title = 'Citizen';
+    let description = '평범한 시민입니다.';
+
+    if (votes.length >= 50) {
+      title = 'Opinion Leader';
+      description = '여론을 주도하는 헤비 유저입니다.';
+    } else if (matchRate >= 90 && votes.length >= 5) {
+      title = 'Native';
+      description = '이 구역의 토박이! 지역 여론과 완벽하게 일치합니다.';
+    } else if (matchRate <= 20 && votes.length >= 5) {
+      title = 'Rebel';
+      description = '고독한 반란군. 남들과는 다른 길을 갑니다.';
+    } else if (matchRate >= 60) {
+      title = 'Trend Follower';
+      description = '대세를 따르는 편입니다.';
+    }
+
+    return {
+      total_votes: votes.length,
+      match_rate: Math.round(matchRate),
+      title,
+      description,
+      votes, // Optional: return detailed history
+    };
   }
 
 }

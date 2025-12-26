@@ -4,7 +4,9 @@ import { AppService } from './app.service';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { Topic } from './topics/topic.entity';
 import { Vote } from './votes/vote.entity';
+import { User } from './users/user.entity';
 import { VoteGateway } from './gateway/vote.gateway';
+import { AuthModule } from './auth/auth.module';
 
 @Module({
   imports: [
@@ -15,13 +17,14 @@ import { VoteGateway } from './gateway/vote.gateway';
       username: process.env.DB_USERNAME || 'postgres',
       password: process.env.DB_PASSWORD || 'admin',
       database: process.env.DB_NAME || 'postgres',
-      entities: [Topic, Vote],
+      entities: [Topic, Vote, User],
       synchronize: true, // 프로덕션에서도 테이블 자동 생성 (임시)
       ssl: process.env.DB_SSL === 'true' ? { rejectUnauthorized: false } : false,
     }),
-    TypeOrmModule.forFeature([Topic, Vote]),
+    TypeOrmModule.forFeature([Topic, Vote, User]),
+    AuthModule,
   ],
   controllers: [AppController],
   providers: [AppService, VoteGateway],
 })
-export class AppModule {}
+export class AppModule { }

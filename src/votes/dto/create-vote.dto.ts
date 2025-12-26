@@ -4,4 +4,5 @@ export class CreateVoteDto {
   topic_id: number;
   choice: string;
   region: string;
+  user_uuid?: string;
 }
