@@ -7,6 +7,9 @@ import { Vote } from '../votes/vote.entity';
 import { JwtModule } from '@nestjs/jwt';
 import { PassportModule } from '@nestjs/passport';
 
+import { GoogleStrategy } from './google.strategy';
+import { JwtStrategy } from './jwt.strategy';
+
 @Module({
   imports: [
     TypeOrmModule.forFeature([User, Vote]),
@@ -16,7 +19,7 @@ import { PassportModule } from '@nestjs/passport';
       signOptions: { expiresIn: '24h' },
     }),
   ],
-  providers: [AuthService],
+  providers: [AuthService, GoogleStrategy, JwtStrategy],
   controllers: [AuthController],
   exports: [AuthService],
 })

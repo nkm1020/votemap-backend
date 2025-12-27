@@ -1,6 +1,6 @@
 // src/app.service.ts
 
-import { Injectable, Inject, forwardRef } from '@nestjs/common';
+import { Injectable, Inject, forwardRef, ConflictException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, Not } from 'typeorm';
 import { Topic, TopicStatus } from './topics/topic.entity';
@@ -31,12 +31,86 @@ export class AppService {
     return this.topicsRepository.findOne({ where: { id } });
   }
 
-  async createVote(createVoteDto: CreateVoteDto): Promise<Vote> {
+  async checkVoteStatus(topicId: number, user?: any, userUuid?: string): Promise<{ hasVoted: boolean; canVoteAgain: boolean; lastVotedAt?: Date }> {
+    const whereCondition: any = {
+      topic: { id: topicId }
+    };
+
+    if (user) {
+      whereCondition.user = { id: user.id };
+    } else if (userUuid) {
+      whereCondition.user_uuid = userUuid;
+    } else {
+      return { hasVoted: false, canVoteAgain: true };
+    }
+
+    const existingVote = await this.votesRepository.findOne({ where: whereCondition });
+
+    if (!existingVote) {
+      return { hasVoted: false, canVoteAgain: true };
+    }
+
+    // Check time diff (7 days)
+    const sevenDaysInMs = 7 * 24 * 60 * 60 * 1000;
+    const now = new Date();
+    const timeDiff = now.getTime() - new Date(existingVote.voted_at).getTime();
+    const canVoteAgain = timeDiff > sevenDaysInMs;
+
+    return {
+      hasVoted: true,
+      canVoteAgain,
+      lastVotedAt: existingVote.voted_at
+    };
+  }
+
+  async createVote(createVoteDto: CreateVoteDto, user?: any): Promise<Vote> {
+    // 1. Check for existing vote
+    const whereCondition: any = {
+      topic: { id: createVoteDto.topic_id }
+    };
+
+    if (user) {
+      whereCondition.user = { id: user.id };
+    } else {
+      whereCondition.user_uuid = createVoteDto.user_uuid;
+      // Also ensure this UUID hasn't voted as a user (though unlikely if not logged in)
+    }
+
+    const existingVote = await this.votesRepository.findOne({ where: whereCondition });
+
+    // Re-vote Logic
+    if (existingVote) {
+      const sevenDaysInMs = 7 * 24 * 60 * 60 * 1000;
+      const now = new Date();
+      const timeDiff = now.getTime() - new Date(existingVote.voted_at).getTime();
+
+      if (timeDiff > sevenDaysInMs) {
+        // Allow re-vote: Update choice, region, and timestamp
+        existingVote.choice = createVoteDto.choice;
+        existingVote.region = createVoteDto.region;
+        existingVote.voted_at = new Date();
+        if (user) existingVote.user = user;
+
+        const savedVote = await this.votesRepository.save(existingVote);
+
+        // Broadcast updates
+        const updatedResults = await this.getTopicResults(createVoteDto.topic_id);
+        this.voteGateway.broadcastVoteUpdate(createVoteDto.topic_id, createVoteDto.region, createVoteDto.choice, updatedResults);
+        this.voteGateway.broadcastResultsUpdate(createVoteDto.topic_id, updatedResults);
+
+        return savedVote;
+      } else {
+        // Deny
+        throw new ConflictException('Already voted for this topic within 7 days');
+      }
+    }
+
     const newVote = this.votesRepository.create({
       choice: createVoteDto.choice,
       region: createVoteDto.region,
       user_uuid: createVoteDto.user_uuid,
-      topic: { id: createVoteDto.topic_id }, // 관계된 topic의 id를 넣어줍니다.
+      topic: { id: createVoteDto.topic_id },
+      user: user ? { id: user.id } : undefined // Link to user if logged in
     });
 
     const savedVote = await this.votesRepository.save(newVote);

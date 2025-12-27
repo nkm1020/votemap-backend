@@ -1,4 +1,5 @@
-import { Body, Controller, Post, UseGuards, Request } from '@nestjs/common';
+import { Body, Controller, Post, UseGuards, Request, Get, Res } from '@nestjs/common';
+import { AuthGuard } from '@nestjs/passport';
 import { AuthService } from './auth.service';
 
 export class RequestOtpDto {
@@ -29,6 +30,36 @@ export class AuthController {
     @Post('otp/verify')
     async verifyOtp(@Body() body: VerifyOtpDto) {
         return this.authService.verifyOtp(body.phone_number, body.code, body.device_uuid);
+    }
+
+    @Get('google')
+    @UseGuards(AuthGuard('google'))
+    async googleAuth(@Request() req) { }
+
+    @Get('google/callback')
+    @UseGuards(AuthGuard('google'))
+    async googleAuthRedirect(@Request() req, @Res() res) {
+        const { access_token } = await this.authService.login(req.user);
+        // Redirect to frontend with token
+        const clientUrl = process.env.CLIENT_URL || 'http://localhost:3000';
+        res.redirect(`${clientUrl}/login/success?token=${access_token}`);
+    }
+
+    // Using POST /auth/sync as requested (or /users/sync if preferred, keeping in Auth for now as per flow)
+    @Post('sync')
+    @UseGuards(AuthGuard('jwt'))
+    async syncVotes(@Body() body: { device_uuid: string }, @Request() req) {
+        // req.user is populated by JwtStrategy (needs to be implemented/ensured)
+        // Assuming JwtStrategy populates req.user with user entity or id
+        // We might need to fetch the full user if req.user only has id
+        // For now, let's assume req.user is available or load it
+        return this.authService.migrateVotes(req.user, body.device_uuid);
+    }
+
+    @Get('me')
+    @UseGuards(AuthGuard('jwt'))
+    async getProfile(@Request() req) {
+        return this.authService.getUserProfile(req.user.id);
     }
 
     // TODO: Add Bearer Guard to extract user_id automatically
