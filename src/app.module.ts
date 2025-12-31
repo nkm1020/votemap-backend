@@ -11,6 +11,8 @@ import { AuthModule } from './auth/auth.module';
 import { Follow } from './follows/follow.entity';
 import { FollowsModule } from './follows/follows.module';
 
+import { UsersModule } from './users/users.module';
+
 @Module({
   imports: [
     ConfigModule.forRoot({
@@ -29,6 +31,7 @@ import { FollowsModule } from './follows/follows.module';
     }),
     TypeOrmModule.forFeature([Topic, Vote, User]),
     AuthModule,
+    UsersModule,
     FollowsModule,
   ],
   controllers: [AppController],

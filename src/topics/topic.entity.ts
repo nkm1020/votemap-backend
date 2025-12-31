@@ -19,8 +19,14 @@ export class Topic {
   @Column()
   option_a: string;
 
+  @Column({ nullable: true })
+  option_a_tags: string; // Comma separated tags e.g. "#미식가,#바삭함"
+
   @Column()
   option_b: string;
+
+  @Column({ nullable: true })
+  option_b_tags: string; // Comma separated tags e.g. "#융통성,#촉촉함"
 
   @Column({ nullable: true }) // 이미지는 없을 수도 있으므로 nullable
   image_url: string;

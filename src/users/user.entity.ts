@@ -43,4 +43,10 @@ export class User {
 
     @OneToMany(() => Follow, follow => follow.following)
     followers: Follow[];
+
+    @Column({ nullable: true })
+    last_nickname_update: Date;
+
+    @Column({ default: false })
+    is_phone_verified: boolean;
 }

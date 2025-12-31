@@ -9,6 +9,7 @@ import { CreateVoteDto } from './votes/dto/create-vote.dto';
 import { CreateTopicDto } from './topics/dto/create-topic.dto';
 import { ResultsDto } from './results/results.dto';
 import { VoteGateway } from './gateway/vote.gateway';
+import { User } from './users/user.entity';
 
 
 @Injectable()
@@ -20,6 +21,8 @@ export class AppService {
     private votesRepository: Repository<Vote>,
     @Inject(forwardRef(() => VoteGateway))
     private voteGateway: VoteGateway,
+    @InjectRepository(User)
+    private usersRepository: Repository<User>,
   ) { }
 
   // src/app.service.ts
@@ -54,7 +57,18 @@ export class AppService {
     const sevenDaysInMs = 7 * 24 * 60 * 60 * 1000;
     const now = new Date();
     const timeDiff = now.getTime() - new Date(existingVote.voted_at).getTime();
-    const canVoteAgain = timeDiff > sevenDaysInMs;
+
+    // Check if user is admin
+    let isAdmin = false;
+    if (user && user.id) {
+      const fullUser = await this.usersRepository.findOne({ where: { id: user.id } });
+      if (fullUser && fullUser.email === 'skynkm0307@gmail.com') {
+        isAdmin = true;
+      }
+    }
+
+    const canVoteAgain = timeDiff > sevenDaysInMs || isAdmin;
+
 
     return {
       hasVoted: true,
@@ -78,14 +92,28 @@ export class AppService {
 
     const existingVote = await this.votesRepository.findOne({ where: whereCondition });
 
+    // Fetch full user if user ID is provided
+    let fullUser: User | null = null;
+    if (user && user.id) {
+      fullUser = await this.usersRepository.findOne({ where: { id: user.id } });
+      console.log('Fetching Full User:', fullUser?.email, fullUser?.id); // LOG
+    }
+
+    // Check if user is admin (skynkm0307@gmail.com)
+    const isAdmin = fullUser && fullUser.email === 'skynkm0307@gmail.com';
+    console.log('Is Admin Request?', isAdmin, 'Email:', fullUser?.email); // LOG
+
     // Re-vote Logic
     if (existingVote) {
       const sevenDaysInMs = 7 * 24 * 60 * 60 * 1000;
       const now = new Date();
       const timeDiff = now.getTime() - new Date(existingVote.voted_at).getTime();
 
-      if (timeDiff > sevenDaysInMs) {
-        // Allow re-vote: Update choice, region, and timestamp
+      console.log('Existing vote found. Time diff:', timeDiff, '7days:', sevenDaysInMs); // LOG
+
+      // Allow re-vote if time passed OR user is Admin
+      if (timeDiff > sevenDaysInMs || isAdmin) {
+        console.log('Allowing re-vote for user', user?.id); // LOG
         existingVote.choice = createVoteDto.choice;
         existingVote.region = createVoteDto.region;
         existingVote.voted_at = new Date();

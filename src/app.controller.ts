@@ -46,34 +46,26 @@ export class AppController {
 
   @Post('/votes') // POST 방식으로 /votes 주소의 요청을 받습니다.
   async createVote(@Body() createVoteDto: CreateVoteDto, @Request() req): Promise<Vote> {
-    // Check for authorization header manually since we allow meaningful anonymous votes too
-    // But we want to link user if logged in.
-    // Ideally we use a "SoftGuard", but for now let's inspect the request or rely on a middleware.
-    // If the frontend sends 'Authorization: Bearer ...', we want to parse it.
-
-    // Quick fix: The standard AuthGuard throws 401 if failed. 
-    // We can try to parse the header if present.
-    // Instead of injecting JwtService here (which requires module shuffle),
-    // let's pass the raw token or header to service? No, service shouldn't know about HTTP.
-
-    // Let's assume the frontend sends the token. 
-    // To properly validate, we need JwtService.
-    // Let's rely on a simpler method: The frontend calls this endpoint.
-    // If user is logged in, they are logged in.
-
-    // I will inject JwtService into AppController.
-    // Check if req.headers.authorization exists.
-
-    let user = null;
+    let user: any = null;
+    console.log('Headers:', req.headers); // Debug headers
     if (req.headers.authorization) {
       try {
         const token = req.headers.authorization.split(' ')[1];
-        // Decode/Verify. Since I don't have JwtService injected yet, I need to do that first.
-        // See next step.
-      } catch (e) { }
+        console.log('Received Token:', token); // Debug token
+        if (token) {
+          const decoded = this.authService.verifyToken(token);
+          console.log('Decoded Token:', decoded); // Debug decoded
+          if (decoded && decoded.sub) {
+            user = { id: decoded.sub };
+          }
+        }
+      } catch (e) {
+        console.error('Token verification failed inside createVote', e);
+      }
     }
+    console.log('User extracted from token:', user); // Debug user
 
-    return this.appService.createVote(createVoteDto, (req as any).user); // Assuming middleware or we fix injection
+    return this.appService.createVote(createVoteDto, user);
   }
 
   @Get('/topics/:id') // Get topic by ID

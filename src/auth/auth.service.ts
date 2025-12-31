@@ -174,9 +174,31 @@ export class AuthService {
             throw new Error('User not found');
         }
 
-        const totalVotes = user.votes ? user.votes.length : 0;
-        const propensity = this.calculatePropensity(user.votes || []);
-        const comparisons = await this.getComparisons(user.votes || []);
+        // Deduplicate votes: Keep only the latest vote per topic
+        const uniqueVotesMap = new Map<number, Vote>();
+        const allVotes = user.votes || [];
+
+        for (const vote of allVotes) {
+            if (vote.topic && !uniqueVotesMap.has(vote.topic.id)) {
+                uniqueVotesMap.set(vote.topic.id, vote);
+            }
+        }
+
+        // Use unique votes for all statistics to ensure accuracy
+        const uniqueVotes = Array.from(uniqueVotesMap.values());
+        const totalVotes = uniqueVotes.length; // Count unique topics voted
+
+        // Comparisons using unique votes (limit to 5)
+        const uniqueRecentVotes = uniqueVotes.slice(0, 5);
+        const comparisons = await this.getComparisons(uniqueRecentVotes);
+
+        // Calculate Statistics derived from visible comparisons for consistency
+        const displayTotal = comparisons.length;
+        const displayMatchCount = comparisons.filter(c => c.isMatch).length;
+        const displayMatchRate = displayTotal > 0 ? Math.round((displayMatchCount / displayTotal) * 100) : 0;
+
+        const propensity = this.assignPersona(displayMatchRate, totalVotes);
+        const topTags = this.extractTopTags(uniqueVotes);
 
         const followersCount = user.followers ? user.followers.length : 0;
         const followingCount = user.following ? user.following.length : 0;
@@ -185,40 +207,97 @@ export class AuthService {
         if (totalVotes >= 5) badges.push({ id: 'vote_5', name: '5회 투표', icon: '🏅' });
         if (totalVotes >= 10) badges.push({ id: 'vote_10', name: '10회 투표', icon: '🏅' });
         if (totalVotes >= 30) badges.push({ id: 'vote_30', name: '30회 투표', icon: '🏅' });
-        if (totalVotes >= 30) badges.push({ id: 'opinion_leader', name: '여론가', icon: '🏆' });
+        if (propensity.title === 'Native') badges.push({ id: 'native', name: '토박이', icon: '🏠' });
 
         return {
             ...user,
             stats: {
                 totalVotes,
-                ranking: `상위 ${Math.max(1, 100 - totalVotes)}%`,
-                match_rate: propensity.match_rate,
+                ranking: `상위 ${Math.max(1, 100 - totalVotes)}%`, // Keeping simple for now
+                match_rate: displayMatchRate, // Use rate from visible comparisons
                 title: propensity.title,
                 description: propensity.description,
                 followersCount,
-                followingCount
+                followingCount,
+                topTags: topTags
             },
             badges,
-            recentVotes: user.votes ? user.votes.slice(0, 5) : [],
+            recentVotes: await Promise.all(uniqueRecentVotes.map(async (vote) => {
+                if (!vote.topic) return { ...vote, stats: { A: 0, B: 0, total: 0 }, localStats: { A: 0, B: 0, total: 0 } };
+
+                // 1. Global Stats
+                const stats = await this.votesRepository
+                    .createQueryBuilder('vote')
+                    .select('vote.choice', 'choice')
+                    .addSelect('COUNT(vote.id)', 'count')
+                    .where('vote.topic.id = :topicId', { topicId: vote.topic.id })
+                    .groupBy('vote.choice')
+                    .getRawMany();
+
+                let aCount = 0;
+                let bCount = 0;
+                stats.forEach(s => {
+                    if (s.choice === 'A') aCount = parseInt(s.count);
+                    if (s.choice === 'B') bCount = parseInt(s.count);
+                });
+
+                // 2. Local Stats (Region specific)
+                let localA = 0;
+                let localB = 0;
+
+                if (vote.region) {
+                    const localStatsQuery = await this.votesRepository
+                        .createQueryBuilder('vote')
+                        .select('vote.choice', 'choice')
+                        .addSelect('COUNT(vote.id)', 'count')
+                        .where('vote.topic.id = :topicId', { topicId: vote.topic.id })
+                        .andWhere('vote.region = :region', { region: vote.region })
+                        .groupBy('vote.choice')
+                        .getRawMany();
+
+                    localStatsQuery.forEach(s => {
+                        if (s.choice === 'A') localA = parseInt(s.count);
+                        if (s.choice === 'B') localB = parseInt(s.count);
+                    });
+                }
+
+                return {
+                    ...vote,
+                    stats: {
+                        A: aCount,
+                        B: bCount,
+                        total: aCount + bCount
+                    },
+                    localStats: {
+                        A: localA,
+                        B: localB,
+                        total: localA + localB
+                    }
+                };
+            })),
             comparisons
         };
     }
 
-    private async getComparisons(votes: Vote[]) {
-        const comparisons: { category: string; myChoice: string; neighborChoice: string; isMatch: boolean; }[] = [];
-        // Take recent 4 unique topics to avoid duplicates in list? 
-        // Or just recent 4 votes.
-        const recentVotes = votes.slice(0, 4);
+    private async calculateMatchRate(votes: Vote[], userRegion: string) {
+        if (!votes || votes.length === 0 || !userRegion || userRegion === 'N/A') {
+            return { matchRate: 0, matchCount: 0 };
+        }
 
-        for (const vote of recentVotes) {
+        let matchCount = 0;
+        let validVoteCount = 0;
+
+        for (const vote of votes) {
             if (!vote.topic) continue;
 
+            // TODO: In a high-traffic app, cache this "Region Winner"
+            // Get majority vote for this topic in this region
             const stats = await this.votesRepository
                 .createQueryBuilder('vote')
                 .select('vote.choice', 'choice')
                 .addSelect('COUNT(vote.id)', 'count')
                 .where('vote.topic.id = :topicId', { topicId: vote.topic.id })
-                .andWhere('vote.region = :region', { region: vote.region })
+                .andWhere('vote.region = :region', { region: userRegion })
                 .groupBy('vote.choice')
                 .getRawMany();
 
@@ -229,11 +308,97 @@ export class AuthService {
                 if (s.choice === 'B') bCount = parseInt(s.count);
             });
 
-            let neighborChoice = 'Draw';
+            // Determine winner
+            let regionWinner = 'DRAW';
+            if (aCount > bCount) regionWinner = 'A';
+            if (bCount > aCount) regionWinner = 'B';
+
+            // Compare with my vote
+            if (regionWinner !== 'DRAW') {
+                validVoteCount++;
+                if (vote.choice === regionWinner) {
+                    matchCount++;
+                }
+            }
+        }
+
+        const matchRate = validVoteCount > 0 ? Math.round((matchCount / validVoteCount) * 100) : 0;
+        return { matchRate, matchCount };
+    }
+
+    private assignPersona(matchRate: number, totalVotes: number) {
+        if (totalVotes < 3) {
+            return { title: 'Newcomer', description: '아직 데이터를 모으고 있어요.' };
+        }
+
+        if (matchRate >= 90) {
+            return { title: '이 구역의 토박이', description: '동네 여론과 완벽하게 일치합니다!' };
+        } else if (matchRate >= 60) {
+            return { title: 'Trend Follower', description: '대세를 따르는 편이시네요.' };
+        } else if (matchRate >= 40) {
+            return { title: '독자적인 철학가', description: '자신만의 주관이 뚜렷합니다.' };
+        } else {
+            return { title: '고독한 반란군', description: '동네 사람들과 취향이 정반대?!' };
+        }
+    }
+
+    private extractTopTags(votes: Vote[]) {
+        const tagCounts: Record<string, number> = {};
+
+        votes.forEach(vote => {
+            if (!vote.topic) return;
+
+            let tagsStr = '';
+            if (vote.choice === 'A') tagsStr = vote.topic.option_a_tags;
+            if (vote.choice === 'B') tagsStr = vote.topic.option_b_tags;
+
+            if (tagsStr) {
+                const tags = tagsStr.split(',').map(t => t.trim());
+                tags.forEach(tag => {
+                    if (tag) {
+                        tagCounts[tag] = (tagCounts[tag] || 0) + 1;
+                    }
+                });
+            }
+        });
+
+        // Convert to array and sort
+        const sortedTags = Object.entries(tagCounts)
+            .sort(([, a], [, b]) => b - a)
+            .slice(0, 3)
+            .map(([tag]) => tag);
+
+        return sortedTags;
+    }
+
+    private async getComparisons(votes: Vote[]) {
+        const comparisons: { category: string; myChoice: string; neighborChoice: string; isMatch: boolean; }[] = [];
+        const recentVotes = votes.slice(0, 5); // Latest 5
+
+        for (const vote of recentVotes) {
+            if (!vote.topic) continue;
+
+            const region = vote.region || '전국'; // Fallback if no region
+
+            const stats = await this.votesRepository
+                .createQueryBuilder('vote')
+                .select('vote.choice', 'choice')
+                .addSelect('COUNT(vote.id)', 'count')
+                .where('vote.topic.id = :topicId', { topicId: vote.topic.id })
+                .andWhere('vote.region = :region', { region: region })
+                .groupBy('vote.choice')
+                .getRawMany();
+
+            let aCount = 0;
+            let bCount = 0;
+            stats.forEach(s => {
+                if (s.choice === 'A') aCount = parseInt(s.count);
+                if (s.choice === 'B') bCount = parseInt(s.count);
+            });
+
+            let neighborChoice = 'DRAW';
             if (aCount > bCount) neighborChoice = 'A';
             if (bCount > aCount) neighborChoice = 'B';
-
-            // If draw, just say Draw? Or pick one? UI expects specific text.
 
             const neighborChoiceText = neighborChoice === 'A' ? vote.topic.option_a : (neighborChoice === 'B' ? vote.topic.option_b : '동률');
             const myChoiceText = vote.choice === 'A' ? vote.topic.option_a : vote.topic.option_b;
@@ -249,11 +414,9 @@ export class AuthService {
     }
 
     async verifyGeoLocation(userId: number, lat: number, lon: number) {
-        // Mock Geo-Verification for MVP
-        // In real app, call Nominatim API here.
-
-        // Mock: If lat/lon provided, verify as "Gangnam-gu" for testing
-        const region = "Gangnam-gu"; // Placeholder
+        // Mock: If lat/lon provided, verify as "서울특별시 강남구" for testing valid region logic
+        // We will default to something valid in our list for better UX testing
+        const region = "서울특별시 강남구";
 
         await this.usersRepository.update(userId, { verified_region: region });
         return { verified_region: region };
